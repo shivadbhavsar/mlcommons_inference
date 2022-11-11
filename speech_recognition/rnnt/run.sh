@@ -2,10 +2,10 @@
 
 set -euo pipefail
 
-work_dir=/export/b07/ws15dgalvez/mlperf-rnnt-librispeech
+work_dir=/code/Git/rnnt
 local_data_dir=$work_dir/local_data
 librispeech_download_dir=$local_data_dir/LibriSpeech
-stage=3
+stage=1
 
 mkdir -p $work_dir $local_data_dir $librispeech_download_dir
 
@@ -14,17 +14,17 @@ mkdir -p $install_dir
 install_dir=$(readlink -f $install_dir)
 
 set +u
-source "$($CONDA_EXE info --base)/etc/profile.d/conda.sh"
+source "/opt/conda/etc/profile.d/conda.sh"
 set -u
 
 # stage -1: install dependencies
 if [[ $stage -le -1 ]]; then
-    conda env create --force -v --file environment.yml
+    # conda env create --force -v --file environment.yml
 
-    set +u
-    source "$(conda info --base)/etc/profile.d/conda.sh"
-    conda activate mlperf-rnnt
-    set -u
+    # set +u
+    # source "$(conda info --base)/etc/profile.d/conda.sh"
+    # conda activate mlperf-rnnt
+    # set -u
 
     # We need to convert .flac files to .wav files via sox. Not all sox installs have flac support, so we install from source.
     wget https://ftp.osuosl.org/pub/xiph/releases/flac/flac-1.3.2.tar.xz -O third_party/flac-1.3.2.tar.xz
@@ -38,9 +38,9 @@ fi
 
 export PATH="$install_dir/bin/:$PATH"
 
-set +u
-conda activate mlperf-rnnt
-set -u
+# set +u
+# conda activate mlperf-rnnt
+# set -u
 
 # stage 0: download model. Check checksum to skip?
 if [[ $stage -le 0 ]]; then

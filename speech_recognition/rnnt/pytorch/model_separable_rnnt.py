@@ -88,6 +88,44 @@ class Encoder(torch.nn.Module):
         x_padded = x_padded.transpose(0, 1)
         return x_padded, x_lens
 
+
+#Define separate module for Embed to encapsulate the control-flow logic
+class Embed(torch.nn.Module):
+
+    def __init__(self, embed_layer, n_hidden, rnn_layers):
+        super().__init__()
+        self.embed = embed_layer
+        self.n_hidden = n_hidden
+        self.rnn_layers = rnn_layers
+
+    def forward(self,
+                y: Optional[torch.Tensor],
+                state: Optional[Tuple[torch.Tensor, torch.Tensor]] = None):
+
+        if y is None:
+            B = 1
+            y = torch.zeros((B, 1, self.n_hidden),
+                            dtype=torch.float32,
+                            device=next(self.parameters()).device)
+
+        else:
+            y = self.embed(y)
+
+        if state is None:
+            batch = y.size(0)
+            state = (torch.zeros(self.rnn_layers,
+                                 batch,
+                                 self.n_hidden,
+                                 dtype=y.dtype,
+                                 device=y.device),
+                     torch.zeros(self.rnn_layers,
+                                 batch,
+                                 self.n_hidden,
+                                 dtype=y.dtype,
+                                 device=y.device))
+
+        return y, state[0], state[1]
+
 class Prediction(torch.nn.Module):
     def __init__(self, vocab_size, n_hidden, pred_rnn_layers,
                  forget_gate_bias, norm, rnn_type, dropout):
@@ -103,6 +141,8 @@ class Prediction(torch.nn.Module):
             forget_gate_bias=forget_gate_bias,
             dropout=dropout,
         )
+        self.cf_embed = Embed(self.embed, self.n_hidden, pred_rnn_layers)
+
 
     def forward(self, y: Optional[torch.Tensor],
                 state: Optional[Tuple[torch.Tensor, torch.Tensor]] = None) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
@@ -123,15 +163,15 @@ class Prediction(torch.nn.Module):
                         h (tensor), shape (L, B, H)
                         c (tensor), shape (L, B, H)
         """
-        if y is None:
-            # This is gross. I should really just pass in an SOS token
-            # instead. Is there no SOS token?
-            assert state is None
-            # Hacky, no way to determine this right now!
-            B = 1
-            y = torch.zeros((B, 1, self.n_hidden), dtype=torch.float32)
-        else:
-            y = self.embed(y)
+        # if y is None:
+        #     # This is gross. I should really just pass in an SOS token
+        #     # instead. Is there no SOS token?
+        #     assert state is None
+        #     # Hacky, no way to determine this right now!
+        #     B = 1
+        #     y = torch.zeros((B, 1, self.n_hidden), dtype=torch.float32)
+        # else:
+        #     y = self.embed(y)
 
         # if state is None:
         #    batch = y.size(0)
@@ -141,8 +181,10 @@ class Prediction(torch.nn.Module):
         #        for _ in range(self.pred_rnn_layers)
         #    ]
 
+        y, h_0, c_0 = self.cf_embed(y, state)
+
         y = y.transpose(0, 1)  # .contiguous()   # (U + 1, B, H)
-        g, hid = self.dec_rnn(y, state)
+        g, hid = self.dec_rnn(y, (h_0, c_0))
         g = g.transpose(0, 1)  # .contiguous()   # (B, U + 1, H)
         # del y, state
         return g, hid

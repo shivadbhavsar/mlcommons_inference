@@ -23,6 +23,7 @@ from .segment import AudioSegment
 
 
 class WaveformFeaturizer(object):
+
     def __init__(self, input_cfg):
         self.cfg = input_cfg
 
@@ -31,7 +32,9 @@ class WaveformFeaturizer(object):
                                        target_sr=self.cfg['sample_rate'],
                                        int_values=self.cfg.get(
                                            'int_values', False),
-                                       offset=offset, duration=duration, trim=trim)
+                                       offset=offset,
+                                       duration=duration,
+                                       trim=trim)
         return self.process_segment(audio)
 
     def process_segment(self, audio_segment):
@@ -47,9 +50,11 @@ constant = 1e-5
 
 def normalize_batch(x, seq_len, normalize_type):
     if normalize_type == "per_feature":
-        x_mean = torch.zeros((seq_len.shape[0], x.shape[1]), dtype=x.dtype,
+        x_mean = torch.zeros((seq_len.shape[0], x.shape[1]),
+                             dtype=x.dtype,
                              device=x.device)
-        x_std = torch.zeros((seq_len.shape[0], x.shape[1]), dtype=x.dtype,
+        x_std = torch.zeros((seq_len.shape[0], x.shape[1]),
+                            dtype=x.dtype,
                             device=x.device)
         for i in range(x.shape[0]):
             x_mean[i, :] = x[i, :, :seq_len[i]].mean(dim=1)
@@ -86,15 +91,25 @@ def splice_frames(x, frame_splicing):
 
 
 class FilterbankFeatures(nn.Module):
-    def __init__(self, sample_rate=8000, window_size=0.02, window_stride=0.01,
-                 window="hamming", normalize="per_feature", n_fft=None,
+
+    def __init__(self,
+                 sample_rate=8000,
+                 window_size=0.02,
+                 window_stride=0.01,
+                 window="hamming",
+                 normalize="per_feature",
+                 n_fft=None,
                  preemph=0.97,
-                 nfilt=64, lowfreq=0, highfreq=None, log=True, dither=constant,
+                 nfilt=64,
+                 lowfreq=0,
+                 highfreq=None,
+                 log=True,
+                 dither=constant,
                  pad_to=8,
                  max_duration=16.7,
                  frame_splicing=1):
         super(FilterbankFeatures, self).__init__()
-#        print("PADDING: {}".format(pad_to))
+        #        print("PADDING: {}".format(pad_to))
 
         torch_windows = {
             'hann': torch.hann_window,
@@ -106,7 +121,7 @@ class FilterbankFeatures(nn.Module):
 
         self.win_length = int(sample_rate * window_size)  # frame size
         self.hop_length = int(sample_rate * window_stride)
-        self.n_fft = n_fft or 2 ** math.ceil(math.log2(self.win_length))
+        self.n_fft = n_fft or 2**math.ceil(math.log2(self.win_length))
 
         self.normalize = normalize
         self.log = log
@@ -122,17 +137,19 @@ class FilterbankFeatures(nn.Module):
         window_fn = torch_windows.get(window, None)
         window_tensor = window_fn(self.win_length,
                                   periodic=False) if window_fn else None
-        filterbanks = torch.tensor(
-            librosa.filters.mel(sample_rate, self.n_fft, n_mels=nfilt, fmin=lowfreq,
-                                fmax=highfreq), dtype=torch.float).unsqueeze(0)
+        filterbanks = torch.tensor(librosa.filters.mel(sample_rate,
+                                                       self.n_fft,
+                                                       n_mels=nfilt,
+                                                       fmin=lowfreq,
+                                                       fmax=highfreq),
+                                   dtype=torch.float).unsqueeze(0)
         # self.fb = filterbanks
         # self.window = window_tensor
         self.register_buffer("fb", filterbanks)
         self.register_buffer("window", window_tensor)
         # Calculate maximum sequence length (# frames)
         max_length = 1 + math.ceil(
-            (max_duration * sample_rate - self.win_length) / self.hop_length
-        )
+            (max_duration * sample_rate - self.win_length) / self.hop_length)
         max_pad = 16 - (max_length % 16)
         self.max_length = max_length + max_pad
 
@@ -156,19 +173,24 @@ class FilterbankFeatures(nn.Module):
         # do preemphasis
         # Ideally, we would mask immediately after this... Ugh :(
         if self.preemph is not None:
-            x = torch.cat((x[:, 0].unsqueeze(1), x[:, 1:] - self.preemph * x[:, :-1]),
-                          dim=1)
+            x = torch.cat(
+                (x[:, 0].unsqueeze(1), x[:, 1:] - self.preemph * x[:, :-1]),
+                dim=1)
 
         # do stft
-        x = torch.stft(x, n_fft=self.n_fft, hop_length=self.hop_length,
+        x = torch.stft(x,
+                       n_fft=self.n_fft,
+                       hop_length=self.hop_length,
                        win_length=self.win_length,
-                       center=True, window=self.window.to(dtype=torch.float))
+                       center=True,
+                       window=self.window.to(dtype=torch.float),
+                       return_complex=False)
 
         # get power spectrum
         x = x.pow(2).sum(-1)
 
         if self.dither > 0 and self.use_deterministic_dithering:
-            x = x + self.dither ** 2
+            x = x + self.dither**2
         # dot with filterbank energies
         x = torch.matmul(self.fb.to(x.dtype), x)
 
@@ -188,9 +210,11 @@ class FilterbankFeatures(nn.Module):
         # normalize if required
         constant = 1e-5
         if self.normalize == "per_feature":
-            x_mean = torch.zeros((seq_len.shape[0], x.shape[1]), dtype=x.dtype,
+            x_mean = torch.zeros((seq_len.shape[0], x.shape[1]),
+                                 dtype=x.dtype,
                                  device=x.device)
-            x_std = torch.zeros((seq_len.shape[0], x.shape[1]), dtype=x.dtype,
+            x_std = torch.zeros((seq_len.shape[0], x.shape[1]),
+                                dtype=x.dtype,
                                 device=x.device)
             for i in range(x.shape[0]):
                 x_mean[i, :] = x[i, :, :seq_len[i]].mean(dim=1)
@@ -214,7 +238,7 @@ class FilterbankFeatures(nn.Module):
 
         # mask to zero any values beyond seq_len in batch, pad to multiple of `pad_to` (for efficiency)
         # max_len = x.size(-1)
-        x = x[:, :, :seq_len.max()]   # rnnt loss requires lengths to match
+        x = x[:, :, :seq_len.max()]  # rnnt loss requires lengths to match
         # mask = torch.arange(max_len).to(seq_len.dtype).to(x.device).expand(x.size(0),
         #                                                                   max_len) >= seq_len.unsqueeze(1)
 
@@ -233,13 +257,18 @@ class FilterbankFeatures(nn.Module):
 
     @classmethod
     def from_config(cls, cfg, log=False):
-        return cls(sample_rate=cfg['sample_rate'], window_size=cfg['window_size'],
-                   window_stride=cfg['window_stride'], n_fft=cfg['n_fft'],
-                   nfilt=cfg['features'], window=cfg['window'],
+        return cls(sample_rate=cfg['sample_rate'],
+                   window_size=cfg['window_size'],
+                   window_stride=cfg['window_stride'],
+                   n_fft=cfg['n_fft'],
+                   nfilt=cfg['features'],
+                   window=cfg['window'],
                    normalize=cfg['normalize'],
                    max_duration=cfg.get('max_duration', 16.7),
-                   dither=cfg['dither'], pad_to=cfg.get("pad_to", 0),
-                   frame_splicing=cfg.get("frame_splicing", 1), log=log)
+                   dither=cfg['dither'],
+                   pad_to=cfg.get("pad_to", 0),
+                   frame_splicing=cfg.get("frame_splicing", 1),
+                   log=log)
 
 
 class FeatureFactory(object):
